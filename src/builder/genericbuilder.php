@@ -35,50 +35,43 @@
  * @license    BSD License
  */
 
-namespace TheSeer\phpDox\DocBlock {
+namespace TheSeer\phpDox {
 
-   class DocBlock {
+    use \TheSeer\fDom\fDomDocument;
+    use \TheSeer\fXSL\fXSLTProcessor;
+    use \TheSeer\fXSL\fXSLCallback;
 
-      protected $elements = array();
+    abstract class GenericBuilder {
 
-      public function appendElement(GenericElement $element) {
-         $name = $element->getAnnotationName();
-         if (isset($this->elements[$name])) {
-            if (!is_array($this->elements[$name])) {
-               $this->elements[$name] = array($this->elements[$name]);
+        private $xsltproc = array();
+
+        /**
+         * Helper to get XSLTProcessor instance
+         *
+         * This method also registers the public methods of
+         * the backend to be callable from within the xsl context
+         *
+         * @param \DomDocument $xsl A Stylesheet DOMDocument
+         *
+         * @return TheSeer\fXSL\fXSLTProcessor
+         */
+        protected function getXSLTProcessor(\DomDocument $xsl) {
+            $hash = spl_object_hash($xsl);
+            if (isset($this->xsltproc[$hash])) {
+                return $this->xsltproc[$hash];
             }
-            $this->elements[$name][] = $element;
-            return;
-         }
-         $this->elements[$name] = $element;
-      }
 
-      public function hasElementByName($name) {
-         return isset($this->elements[$name]);
-      }
+            $cb = new fXSLCallback('http://phpdox.de/callback', 'cb');
+            $cb->setObject($this);
+            $cb->setBlacklist(array('run','build'));
 
-      public function getEementByName($name) {
-         if (!isset($this->elements[$name])) {
-            throw new DocBlockException("No element with name '$name'", DocBlockException::NotFound);
-         }
-         return $this->elements[$name];
-      }
+            $this->xsltproc[$hash] = new fXSLTProcessor($xsl);
+            $this->xsltproc[$hash]->registerCallback($cb);
 
-      public function asDom(\TheSeer\fDOM\fDOMDocument $doc) {
-         $node = $doc->createElementNS('http://xml.phpdox.de/src#', 'docblock');
-         // add lines and such?
-         foreach($this->elements as $element) {
-            if (is_array($element)) {
-               foreach($element as $el) {
-                  $node->appendChild($el->asDom($doc));
-               }
-               continue;
-            }
-            $node->appendChild($element->asDom($doc));
-         }
-         return $node;
-      }
+            return $this->xsltproc[$hash];
+        }
 
-   }
+
+    }
 
 }

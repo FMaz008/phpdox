@@ -34,93 +34,228 @@
  * @copyright  Arne Blankerts <arne@blankerts.de>, All rights reserved.
  * @license    BSD License
  */
-
 namespace TheSeer\phpDox {
 
-   use \TheSeer\fDOM\fDOMDocument;
-   use \TheSeer\fXSL\fXSLTProcessor;
+    use \TheSeer\fDOM\fDOMDocument;
+    use \TheSeer\fDOM\fDOMElement;
 
-   class Generator {
-      protected $xmlDir;
-      protected $docDir;
+    use \TheSeer\fXSL\fXSLTProcessor;
+    use \TheSeer\fXSL\fXSLCallback;
 
-      protected $publicOnly = false;
+    class Generator {
+        protected $xmlDir;
+        protected $docDir;
 
-      protected $namespaces;
-      protected $interfaces;
-      protected $classes;
+        protected $publicOnly = false;
 
-      /**
-       * Generator constructor
-       *
-       * @param string $xmlDir      Base path where class xml files are found
-       * @param string $docDir      Base directory to store documentation files in
-       * @param fDomDocument $nsDom DOM instance to register namespaces in
-       * @param fDomDocument $iDom  DOM instance to register interfaces in
-       * @param fDomDocument $cDom  DOM instance to register classes in
-       */
-      public function __construct($xmlDir, $docDir, fDOMDocument $nsDom, fDOMDocument $iDom, fDOMDocument $cDom) {
-         $this->xmlDir  = $xmlDir;
-         $this->docDir  = $docDir;
+        protected $logger;
 
-         $this->namespaces = $nsDom;
-         $this->interfaces = $iDom;
-         $this->classes    = $cDom;
-      }
+        protected $namespaces;
+        protected $packages;
+        protected $interfaces;
+        protected $classes;
 
-      public function setPublicOnly($switch) {
-         $this->publicOnly = $switch;
-      }
+        /**
+         * Map of registered handler
+         *
+         * @var array
+         */
+        protected $eventHandler = array(
+            'phpdox.start' => array(),
+            'phpdox.end' => array(),
 
-      public function isPublicOnly() {
-         return $this->publicOnly;
-      }
+            'phpdox.classes.start' => array(),
+            'phpdox.classes.end' => array(),
+            'phpdox.interfaces.start' => array(),
+            'phpdox.interfaces.end' => array(),
 
-      public function getNamespacesAsDOM() {
-         return $this->namespaces;
-      }
+            'namespace.start' => array(),
+            'namespace.classes.start' => array(),
+            'namespace.classes.end' => array(),
+            'namespace.interfaces.start' => array(),
+            'namespace.interfaces.end' => array(),
+            'namespace.end' => array(),
 
-      public function getInterfacesAsDOM() {
-         return $this->interfaces;
-      }
+            'class.start' => array(),
+            'class.constant' => array(),
+            'class.member' => array(),
+            'class.method' => array(),
+            'class.end' => array(),
 
-      public function getClassesAsDOM() {
-         return $this->classes;
-      }
+            'interface.start' => array(),
+            'interface.constant' => array(),
+            'interface.method' => array(),
+            'interface.end' => array()
+        );
 
-      public function getXMLDirectory() {
-         return $this->xmlDir;
-      }
+        /**
+         * Generator constructor
+         *
+         * @param string       $xmlDir Base path where class xml files are found
+         * @param string       $tplDir Base path for templates
+         * @param string       $docDir Base directory to store documentation files in
+         * @param fDomDocument $nsDom  DOM instance of namespaces.xml
+         * @param fDomDocument $iDom   DOM instance of interfaces.xml
+         * @param fDomDocument $cDom   DOM instance of classes.xml
+         */
+        public function __construct($xmlDir, $tplDir, $docDir, fDOMDocument $nsDom, fDOMDocument $pDom, fDOMDocument $iDom, fDOMDocument $cDom) {
+            $this->xmlDir = $xmlDir;
+            $this->docDir = $docDir;
+            $this->tplDir = $tplDir;
 
-      public function getDocumentationDirectory() {
-         return $this->docDir;
-      }
+            $this->namespaces = $nsDom;
+            $this->packages   = $pDom;
+            $this->interfaces = $iDom;
+            $this->classes    = $cDom;
+        }
 
-      /**
-       * Main executer of the generator
-       *
-       * @param string $class Classname of the backend implementation to use
-       */
-      public function run($class) {
-         if (strpos('\\', $class)===false) {
-            $class = 'TheSeer\\phpDox\\' . $class;
-         }
+        public function setPublicOnly($switch) {
+            $this->publicOnly = $switch;
+        }
 
-         if (!class_exists($class, true)) {
-            throw new GeneratorException("Backend class '$class' is not defined", GeneratorException::ClassNotDefined);
-         }
-         $backend = new $class();
-         if (!$backend instanceof genericBackend) {
-            throw new GeneratorException("'$class' must implement the GeneratorBackendInterface to be used as backend", GeneratorException::UnsupportedBackend);
-         }
-         $backend->run($this);
-      }
+        public function registerHandler($event, EventHandler $handler) {
+            if (!array_key_exists($event, $this->eventHandler)) {
+                throw new GeneratorException("'$event' unknown", GeneratorException::UnknownEvent);
+            }
+            $hash = spl_object_hash($handler);
+            if (isset($this->eventHandler[$event][$hash])) {
+                throw GeneratorException("Handler already registered for event '$event'", GeneratorException::AlreadyRegistered);
+            }
+            $this->eventHandler[$event][] = $handler;
+        }
 
-   }
+        /**
+         * Main executer of the generator
+         *
+         * @param ProgressLogger $logger
+         */
+        public function run(ProgressLogger $logger) {
+            $this->logger = $logger;
+            $this->triggerEvent('phpdox.start');
+            if ($this->namespaces->documentElement->hasChildNodes()) {
+                $this->processWithNamespace();
+            } else {
+                $this->processGlobalOnly();
+            }
+            $this->triggerEvent('phpdox.end');
+            $logger->completed();
+        }
 
-   class GeneratorException extends \Exception {
-      const ClassNotDefined    = 1;
-      const UnsupportedBackend = 2;
-      const UnexepctedType     = 3;
-   }
+        protected function processGlobalOnly() {
+            $this->triggerEvent('phpdox.classes.start');
+            foreach($this->classes->query('//phpdox:class') as $class) {
+                $this->processClass($class);
+            }
+            $this->triggerEvent('phpdox.classes.end');
+            $this->triggerEvent('phpdox.interfaces.start');
+            foreach($this->interfaces->query('//phpdox:interface') as $interface) {
+                $this->processInterface($interface);
+            }
+            $this->triggerEvent('phpdox.interfaces.end');
+        }
+
+        protected function processWithNamespace() {
+            foreach($this->namespaces->query('//phpdox:namespace') as $namespace) {
+                $this->triggerEvent('namespace.start', $namespace);
+                $this->triggerEvent('namespace.classes.start', $namespace);
+
+                $xpath = sprintf('//phpdox:namespace[@name="%s"]/phpdox:class', $namespace->getAttribute('name'));
+                foreach($this->classes->query($xpath) as $class) {
+                    $this->processClass($class);
+                }
+
+                $this->triggerEvent('namespace.classes.end', $namespace);
+                $this->triggerEvent('namespace.interfaces.start', $namespace);
+
+                $xpath = sprintf('//phpdox:namespace[@name="%s"]/phpdox:interface', $namespace->getAttribute('name'));
+                foreach($this->interfaces->query($xpath) as $interface) {
+                    $this->processInterface($interface);
+                }
+
+                $this->triggerEvent('namespace.interfaces.end', $namespace);
+                $this->triggerEvent('namespace.end', $namespace);
+            }
+        }
+
+        public function getXSLTProcessor($filename) {
+            $tpl = new fDomDocument();
+            $tpl->load($this->tplDir . '/' . $filename);
+            return new fXSLTProcessor($tpl);
+        }
+
+        public function saveDomDocument($dom, $filename) {
+            $filename = $this->docDir . '/' . $filename;
+            $path = dirname($filename);
+            clearstatcache();
+            if (!file_exists($path)) {
+                mkdir($path, 0755, true);
+            }
+            return $dom->save($filename);
+        }
+
+
+        protected function processClass(fDOMElement $class) {
+            $classDom = new fDomDocument();
+            $classDom->load($this->xmlDir . '/' . $class->getAttribute('xml'));
+            $classDom->registerNamespace('phpdox', 'http://xml.phpdox.de/src#');
+
+            foreach($classDom->query('//phpdox:class') as $classNode) {
+                $this->triggerEvent('class.start', $classNode);
+
+                foreach($classNode->query('phpdox:constant') as $constant) {
+                    $this->triggerEvent('class.constant', $constant);
+                }
+
+                foreach($classNode->query('phpdox:member') as $member) {
+                    if ($this->publicOnly && ($member->getAttribute('visibility')!='public')) {
+                        continue;
+                    }
+                    $this->triggerEvent('class.member', $member);
+                }
+
+                foreach($classNode->query('phpdox:method') as $method) {
+                    if ($this->publicOnly && ($method->getAttribute('visibility')!='public')) {
+                        continue;
+                    }
+                    $this->triggerEvent('class.method', $method);
+                }
+                $this->triggerEvent('class.end', $classNode);
+            }
+        }
+
+        protected function processInterface(fDOMElement $interface) {
+            $interfaceDom = new fDomDocument();
+            $interfaceDom->load($this->xmlDir . '/' . $interface->getAttribute('xml'));
+            $interfaceDom->registerNamespace('phpdox', 'http://xml.phpdox.de/src#');
+
+            foreach($interfaceDom->query('//phpdox:interface') as $interfaceNode) {
+                $this->triggerEvent('interface.start', $interfaceNode);
+
+                foreach($interfaceNode->query('phpdox:constant') as $constant) {
+                    $this->triggerEvent('interface.constant', $constant);
+                }
+
+                foreach($interfaceNode->query('phpdox:method') as $method) {
+                    $this->triggerEvent('interface.method', $method);
+                }
+
+                $this->triggerEvent('interface.end', $interfaceNode);
+            }
+        }
+
+        protected function triggerEvent($event) {
+            $this->logger->progress('processed');
+            $payload = func_get_args();
+            foreach($this->eventHandler[$event] as $proc) {
+                call_user_func_array(array($proc, 'handle'), $payload);
+            }
+        }
+
+    }
+
+    class GeneratorException extends \Exception {
+        const UnknownEvent = 1;
+        const AlreadyRegistered = 2;
+    }
+
 }

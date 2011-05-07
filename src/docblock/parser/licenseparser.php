@@ -35,22 +35,14 @@
  * @license    BSD License
  */
 
-namespace TheSeer\phpDox {
+namespace TheSeer\phpDox\DocBlock {
 
-   use \TheSeer\fDom\fDomDocument;
+   class LicenseParser extends GenericParser {
 
-   class htmlBuilder extends genericBackend {
-
-      public function build() {
-         $tpl = new fDomDocument();
-         $tpl->load(__DIR__.'/htmlBuilder/class.xsl');
-         $xsl = $this->getXSLTProcessor($tpl);
-
-         foreach($this->getClasses() as $class) {
-            $html = $xsl->transformToDoc($this->getXMLByClassName($class));
-            $this->saveDomDocument($html, 'classes/'. $this->classNameToFileName($class,'xhtml'));
-         }
-
+      public function getObject(array $buffer) {
+          $obj = parent::buildObject('TheSeer\\phpDox\\DocBlock\\GenericElement', $buffer);
+          $obj->setName($this->payload);
+          return $obj;
       }
 
    }

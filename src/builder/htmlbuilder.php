@@ -35,50 +35,54 @@
  * @license    BSD License
  */
 
-namespace TheSeer\phpDox\DocBlock {
+namespace TheSeer\phpDox {
 
-   class DocBlock {
+    use \TheSeer\fDom\fDomDocument;
+    use \TheSeer\fDom\fDomElement;
 
-      protected $elements = array();
+    class HtmlBuilder implements EventHandler {
 
-      public function appendElement(GenericElement $element) {
-         $name = $element->getAnnotationName();
-         if (isset($this->elements[$name])) {
-            if (!is_array($this->elements[$name])) {
-               $this->elements[$name] = array($this->elements[$name]);
+        protected $xsl;
+        protected $generator;
+
+        protected $eventMap = array(
+            'class.start' => 'buildClass'
+        );
+
+        public function setUp(Generator $generator) {
+            $this->generator = $generator;
+            foreach(array_keys($this->eventMap) as $event) {
+                $generator->registerHandler($event, $this);
             }
-            $this->elements[$name][] = $element;
-            return;
-         }
-         $this->elements[$name] = $element;
-      }
+            $this->xsl = $generator->getXSLTProcessor('htmlBuilder/class.xsl');
+        }
 
-      public function hasElementByName($name) {
-         return isset($this->elements[$name]);
-      }
-
-      public function getEementByName($name) {
-         if (!isset($this->elements[$name])) {
-            throw new DocBlockException("No element with name '$name'", DocBlockException::NotFound);
-         }
-         return $this->elements[$name];
-      }
-
-      public function asDom(\TheSeer\fDOM\fDOMDocument $doc) {
-         $node = $doc->createElementNS('http://xml.phpdox.de/src#', 'docblock');
-         // add lines and such?
-         foreach($this->elements as $element) {
-            if (is_array($element)) {
-               foreach($element as $el) {
-                  $node->appendChild($el->asDom($doc));
-               }
-               continue;
+        public function handle($event) {
+            if (!isset($this->eventMap[$event])) {
+                throw new HtmlBuilderException("Don't know how to handle event '$event'", HtmlBuilderException::UnkownEvent);
             }
-            $node->appendChild($element->asDom($doc));
-         }
-         return $node;
-      }
+            $payload = func_get_args();
+            array_shift($payload);
+            call_user_func_array(array($this, $this->eventMap[$event]), $payload);
 
-   }
+        }
+
+        protected function buildClass(fDOMElement $classNode) {
+            $full = $classNode->getAttribute('full');
+            $this->xsl->setParameter('', 'class', $full);
+            //var_dump($full);
+            $html = $this->xsl->transformToDoc($classNode);
+            $this->generator->saveDomDocument($html, 'classes/'. $this->classNameToFileName($full, 'xhtml'));
+        }
+
+        protected function classNameToFileName($class, $ext = 'xml') {
+            return str_replace('\\', '_', $class) . '.' . $ext;
+        }
+
+    }
+
+    class HtmlBuilderException extends \Exception {
+        const UnkownEvent = 1;
+    }
 
 }

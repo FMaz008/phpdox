@@ -37,39 +37,20 @@
 
 namespace TheSeer\phpDox\DocBlock {
 
-   class ParamElement extends GenericElement {
+    class InvalidElement extends GenericElement {
 
-      protected $description;
-      protected $type;
-      protected $varname;
+        public function asDom(\TheSeer\fDOM\fDOMDocument $ctx) {
+            $node = $ctx->createElementNS('http://xml.phpdox.de/src#', 'invalid');
+            $node->setAttribute('annotation', $this->name);
+            foreach($this->attributes as $attribute => $value) {
+                $node->setAttribute($attribute, $value);
+            }
+            if ($this->body !== NULL && $this->body !== '') {
+                $node->appendChild($ctx->createTextnode($this->body));
+            }
+            return $node;
+        }
 
-      public function setVariable($name) {
-         $this->varname = $name;
-      }
+    }
 
-      public function setType($type) {
-         $this->type = $type;
-      }
-
-      public function setDescription($desc) {
-         $this->description = $desc;
-      }
-
-      public function asDom(\TheSeer\fDOM\fDOMDocument $ctx) {
-         $node = $ctx->createElementNS('http://phpdox.de/xml#', 'param');
-         $node->setAttribute('name', $this->varname);
-
-         if ($this->type !== '') {
-            $node->setAttribute('type', $this->type);
-         }
-         if ($this->description !== '') {
-            $node->setAttribute('description', $this->description);
-         }
-         if ($this->body !== '') {
-            $node->appendChild($ctx->createTextnode($this->body));
-         }
-         return $node;
-      }
-
-   }
 }

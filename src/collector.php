@@ -36,135 +36,179 @@
  */
 namespace TheSeer\phpDox {
 
-   use \TheSeer\Tools\PHPFilterIterator;
-   use \TheSeer\fDOM\fDOMDocument;
+    use \TheSeer\Tools\PHPFilterIterator;
+    use \TheSeer\fDOM\fDOMDocument;
 
-   class Collector {
+    class Collector {
 
-      protected $xmlDir;
+        /**
+         * Starting index position in src path string to use in store
+         * @var int
+         */
+        protected $srcIndex = 0;
 
-      protected $publicOnly = false;
+        /**
+         * Path to store xml work data in
+         * @var string
+         */
+        protected $xmlDir;
 
-      protected $namespaces;
-      protected $interfaces;
-      protected $classes;
+        /**
+         * Flag to enable or disable processing of non public methods and members
+         * @var boolean
+         */
+        protected $publicOnly = false;
 
-      /**
-       * Collector constructor
-       *
-       * @param string 		 $xmlDir	Base path to store individual class files in
-       * @param fDomDocument $nsDom		DOM instance to register namespaces in
-       * @param fDomDocument $iDom		DOM instance to register interfaces in
-       * @param fDomDocument $cDom		DOM instance to register classes in
-       */
-      public function __construct($xmlDir, fDOMDocument $nsDom, fDOMDocument $iDom, fDOMDocument $cDom) {
-         $this->xmlDir     = $xmlDir;
-         $this->namespaces = $nsDom;
-         $this->interfaces = $iDom;
-         $this->classes    = $cDom;
-      }
+        /**
+         * fDOMDocument used to register Namespaces in
+         * @var \TheSeer\fDOM\fDOMDocument
+         */
+        protected $namespaces;
 
-      public function setPublicOnly($switch) {
-         $this->publicOnly = $switch === true;
-      }
+        /**
+         * fDOMDocument used to register Packages in
+         * @var \TheSeer\fDOM\fDOMDocument
+         */
+        protected $packages;
 
-      /**
-       * Main executer of the collector, looping over the iterator with found files
-       *
-       * @param \Iterator $scanner
-       * @param Logger    $logger
-       */
-      public function run(\Theseer\Tools\IncludeExcludeFilterIterator $scanner, $logger) {
+        /**
+         * fDOMDocument used to register Interfaces in
+         * @var \TheSeer\fDOM\fDOMDocument
+         */
+        protected $interfaces;
 
-         $worker  = new PHPFilterIterator($scanner);
-         $builder = new Builder($this->publicOnly);
+        /**
+         * fDOMDocument used to register classes in
+         * @var \TheSeer\fDOM\fDOMDocument
+         */
+        protected $classes;
 
-         if (!file_exists($this->xmlDir)) {
-            mkdir($this->xmlDir);
-         }
+        /**
+         * Collector constructor
+         *
+         * @param \TheSeer\fDOM\fDomDocument $nsDom	 DOM instance to register namespaces in
+         * @param \TheSeer\fDOM\fDomDocument $pDom   DOM instance to register packages in
+         * @param \TheSeer\fDOM\fDomDocument $iDom	 DOM instance to register interfaces in
+         * @param \TheSeer\fDOM\fDomDocument $cDom	 DOM instance to register classes in
+         */
+        public function __construct($xmlDir, fDOMDocument $nsDom, fDOMDocument $pDom, fDOMDocument $iDom, fDOMDocument $cDom) {
+            $this->xmlDir     = $xmlDir;
+            $this->namespaces = $nsDom;
+            $this->packages   = $pDom;
+            $this->interfaces = $iDom;
+            $this->classes    = $cDom;
+        }
 
-         foreach($worker as $file) {
-            $target = $this->setupTarget($file);
-            if (file_exists($target) && filemtime($target)==$file->getMTime()) {
-               $logger->progress('cached');
-               continue;
+        /**
+         * Setter to enable or disable handling of only public methods and members
+         *
+         * @param boolean $switch
+         */
+        public function setPublicOnly($switch) {
+            $this->publicOnly = $switch === true;
+        }
+
+        /**
+         * Setter to overwrite the default source directory string index position
+         *
+         * @param string $dir Directory to change source directory to
+         */
+        public function setStartIndex($index) {
+            $this->srcIndex = $index;
+        }
+
+        /**
+         * Main executer of the collector, looping over the iterator with found files
+         *
+         * @param \Iterator      $scanner Iterator with splFileObjects
+         * @param ProgressLogger $logger  A Logger instance to report progress and problems
+         */
+        public function run(\Theseer\Tools\IncludeExcludeFilterIterator $scanner, $logger) {
+            $worker = new PHPFilterIterator($scanner);
+            $analyser = new Analyser($this->publicOnly);
+
+            if (!file_exists($this->xmlDir)) {
+                mkdir($this->xmlDir);
             }
-            try {
-               $xml = $builder->processFile($file);
-               $xml->formatOutput= true;
-               $xml->save($target);
-               touch($target, $file->getMTime(), $file->getATime());
 
-               $src = realpath($file->getPathName());
+            foreach($worker as $file) {
+                $target = $this->setupTarget($file);
+                if (file_exists($target) && filemtime($target)==$file->getMTime()) {
+                    $logger->progress('cached');
+                    continue;
+                }
+                try {
+                    $xml = $analyser->processFile($file);
+                    $xml->formatOutput= true;
+                    $xml->save($target);
+                    touch($target, $file->getMTime(), $file->getATime());
 
-               $this->registerNamespaces($target, $src, $builder->getNamespaces());
-               $this->registerInContainer($this->interfaces, 'interface', $target, $src, $builder->getInterfaces());
-               $this->registerInContainer($this->classes, 'class', $target, $src, $builder->getClasses());
-               $logger->progress('processed');
-            } catch (\Exception $e) {
-               $logger->progress('failed');
-               var_dump($e);
-               // TODO: Report Exception ;)
+                    $src = realpath($file->getPathName());
+
+                    $this->registerNamespaces($target, $src, $analyser->getNamespaces());
+                    $this->registerInContainer($this->packages, 'package', $target, $src, $analyser->getPackages());
+                    $this->registerInContainer($this->interfaces, 'interface', $target, $src, $analyser->getInterfaces());
+                    $this->registerInContainer($this->classes, 'class', $target, $src, $analyser->getClasses());
+                    $logger->progress('processed');
+                } catch (\Exception $e) {
+                    $logger->progress('failed');
+                    var_dump($e);
+                    // TODO: Report Exception ;)
+                }
             }
-         }
+            $logger->completed();
+        }
 
-         $logger->buildSummary();
-      }
+        protected function registerNamespaces($target, $src, array $list) {
+            foreach($list as $namespace) {
+                $name = $namespace->getAttribute('name');
+                $nsNode = $this->namespaces->query("//phpdox:namespace[@name='$name']")->item(0);
+                if (!$nsNode) {
+                    $nsNode = $this->namespaces->documentElement->appendElementNS('http://xml.phpdox.de/src#', 'namespace');
+                    $nsNode->setAttribute('name', $name);
+                }
+                $fNode = $this->namespaces->query("//phpdox:namespace[@name='$name']/phpdox:file[@src='$src']")->item(0);
+                if (!$fNode) {
+                    $file = $nsNode->appendElementNS('http://xml.phpdox.de/src#', 'file');
+                    $file->setAttribute('xml', $target);
+                    $file->setAttribute('src', $src);
+                }
+            }
+        }
 
-      protected function registerNamespaces($target, $src, array $list) {
-         foreach($list as $namespace) {
-            $name = $namespace->getAttribute('name');
-            $nsNode = $this->namespaces->query("//phpdox:namespace[@name='$name']")->item(0);
-            if (!$nsNode) {
-               $nsNode = $this->namespaces->documentElement->appendElementNS('http://phpdox.de/xml#','namespace');
-               $nsNode->setAttribute('name', $name);
+        protected function registerInContainer(fDomDocument $container, $nodeName, $target, $src, $list) {
+            foreach($container->query("//phpdox:*[@src='$src']") as $old) {
+                $old->parentNode->removeChild($old);
             }
-            $fNode = $this->namespaces->query("//phpdox:namespace[@name='$name']/phpdox:file[@src='$src']")->item(0);
-            if (!$fNode) {
-               $file = $nsNode->appendElementNS('http://phpdox.de/xml#','file');
-               $file->setAttribute('xml', $target);
-               $file->setAttribute('src', $src);
+            foreach($list as $srcNode) {
+                if ($srcNode->parentNode->localName == 'namespace') {
+                    $ns = $srcNode->parentNode->getAttribute('name');
+                    $ctx = $container->query("//phpdox:namespace[@name='$ns']")->item(0);
+                    if (!$ctx) {
+                        $ctx = $container->documentElement->appendElementNS('http://xml.phpdox.de/src#', 'namespace');
+                        $ctx->setAttribute('name', $srcNode->parentNode->getAttribute('name'));
+                    }
+                } else {
+                    $ctx = $container->documentElement;
+                }
+                $workNode = $ctx->appendElementNS('http://xml.phpdox.de/src#', $nodeName);
+                foreach($srcNode->attributes as $attr) {
+                    $workNode->appendChild($container->importNode($attr, true));
+                }
+                $workNode->setAttribute('xml', substr($target, strlen($this->xmlDir)+1));
+                $workNode->setAttribute('src', $src);
             }
-         }
-      }
+        }
 
-      protected function registerInContainer(fDomDocument $container, $nodeName, $target, $src, $list) {
-         foreach($container->query("//phpdox:*[@src='$src']") as $old) {
-            $old->parentNode->removeChild($old);
-         }
-         foreach($list as $srcNode) {
-            if ($srcNode->parentNode->localName=='namespace') {
-               $ns = $srcNode->parentNode->getAttribute('name');
-               $ctx = $container->query("//phpdox:namespace[@name='$ns']")->item(0);
-               if (!$ctx) {
-                  $ctx = $container->documentElement->appendElementNS('http://phpdox.de/xml#','namespace');
-                  $ctx->setAttribute('name', $srcNode->parentNode->getAttribute('name'));
-               }
-            } else {
-               $ctx = $container->documentElement;
+        protected function setupTarget($file) {
+            $path = substr($file->getPathName(), $this->srcIndex);
+            $target = $this->xmlDir . $path . '.xml';
+            $targetDir = dirname($target);
+            if (!file_exists($targetDir)) {
+                mkdir($targetDir, 0755, true);
             }
-            $workNode = $ctx->appendElementNS('http://phpdox.de/xml#',$nodeName);
-            foreach($srcNode->attributes as $attr) {
-               $workNode->appendChild($container->importNode($attr,true));
-            }
-            $workNode->setAttribute('xml', substr($target, strlen($this->xmlDir)+1));
-            $workNode->setAttribute('src', $src);
-         }
-      }
+            return $target;
+        }
+    }
 
-      protected function setupTarget($file) {
-         $path = array();
-         foreach(explode('/', $file->getPathName()) as $part) {
-            if($part == '.' || $part == '') continue;
-            $path[] = $part;
-         }
-         $target = $this->xmlDir . '/' . join('/',$path).'.xml';
-         $targetDir = dirname($target);
-         clearstatcache();
-         if (!file_exists($targetDir)) {
-            mkdir($targetDir,0755,true);
-         }
-         return $target;
-      }
-   }
 }

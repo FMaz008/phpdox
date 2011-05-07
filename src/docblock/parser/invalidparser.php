@@ -37,39 +37,14 @@
 
 namespace TheSeer\phpDox\DocBlock {
 
-   class GenericElement {
+    class InvalidParser extends GenericParser {
 
-      protected $name;
-      protected $value;
-      protected $body;
+        public function getObject(array $buffer) {
+            $obj = $this->buildObject('TheSeer\phpDox\DocBlock\InvalidElement',$buffer);
+            $obj->setValue($this->payload);
+            return $obj;
+        }
 
-      public function __construct($name) {
-         $this->name = $name;
-      }
+    }
 
-      public function getName() {
-         return $this->name;
-      }
-
-      public function setVaue($value) {
-         $this->value = $value;
-      }
-
-      public function setBody($body) {
-         $this->body = $body;
-      }
-
-      public function asDom(\TheSeer\fDOM\fDOMDocument $ctx) {
-         $node = $ctx->createElementNS('http://phpdox.de/xml#', 'annotation');
-         $node->setAttribute('name', $this->name);
-         if ($this->value !== '') {
-            $node->setAttribute('value', $this->value);
-         }
-         if ($this->body !== '') {
-            $node->appendChild($ctx->createTextnode($this->body));
-         }
-         return $node;
-      }
-
-   }
 }

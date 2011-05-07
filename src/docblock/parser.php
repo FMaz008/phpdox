@@ -34,74 +34,83 @@
  * @copyright  Arne Blankerts <arne@blankerts.de>, All rights reserved.
  * @license    BSD License
  */
-
 namespace TheSeer\phpDox\DocBlock {
 
-   class Parser {
+    class Parser {
 
-      protected $map = array(
-         'description' => 'TheSeer\\phpDox\\DocBlock\\DescriptionParser',
-         'param' => 'TheSeer\\phpDox\\DocBlock\\ParamParser',
-         'var' => 'TheSeer\\phpDox\\DocBlock\\ReturnParser',
-         'return' => 'TheSeer\\phpDox\\DocBlock\\ReturnParser'
-      );
+        protected $map = array(
+            'description' => 'TheSeer\\phpDox\\DocBlock\\DescriptionParser',
+            'param' => 'TheSeer\\phpDox\\DocBlock\\ParamParser',
+            'var' => 'TheSeer\\phpDox\\DocBlock\\VarParser',
+            'return' => 'TheSeer\\phpDox\\DocBlock\\VarParser',
+            'license' => 'TheSeer\\phpDox\\DocBlock\\LicenseParser'
+            );
 
-      protected $current;
+        protected $current;
 
-      public function __construct(array $map = array()) {
-         $this->map = array_merge($this->map, $map);
-      }
+        public function __construct(array $map = array()) {
+            $this->map = array_merge($this->map, $map);
+        }
 
-      public function parse($block) {
-         $docBlock = new DocBlock();
-         $lines = $this->prepare($block);
-         $this->startParser('description');
-         $buffer = array();
-         foreach($lines as $line) {
-            if ($line == '' || $line == '/') {
-               if (count($buffer)) {
-                  $buffer[] = '';
-               }
-               continue;
+        public function parse($block) {
+            $docBlock = new DocBlock();
+            $lines = $this->prepare($block);
+            $this->startParser('description');
+            $buffer = array();
+            foreach($lines as $line) {
+                if ($line == '' || $line == '/') {
+                    if (count($buffer)) {
+                        $buffer[] = '';
+                    }
+                    continue;
+                }
+
+                if ($line[0]=='@') {
+                    $docBlock->appendElement(
+                        $this->current->getObject($buffer)
+                    );
+                    $buffer = array();
+
+                    $lineParts = explode(' ', ltrim($line, '@'), 2);
+                    $name      = $lineParts[0];
+                    $payload   = ( isset( $lineParts[1] ) ? $lineParts[1] : '' );
+
+                    $this->startParser($name, $payload);
+                    continue;
+                }
+                $buffer[] = $line;
             }
+            $docBlock->appendElement(
+                $this->current->getObject($buffer)
+            );
+            return $docBlock;
+        }
 
-            if ($line[0]=='@') {
-               $docBlock->appendElement(
-                  $this->current->getObject($buffer)
-               );
-               $buffer = array();
-               list($name, $payload) = explode(' ', ltrim($line,'@'), 2);
-               $this->startParser($name, $payload);
-               continue;
+        protected function prepare($block) {
+            $block = str_replace(array("\r\n","\r"), "\n", $block);
+            $raw = array();
+            foreach(explode("\n", $block) as $line) {
+                $raw[] = substr(trim($line, " \n\t"),2);
             }
-            $buffer[] = $line;
-         }
-         $docBlock->appendElement(
-            $this->current->getObject($buffer)
-         );
-         return $docBlock;
-      }
+            return $raw;
+        }
 
-      protected function prepare($block) {
-         $block = str_replace(array("\r\n","\r"), "\n", $block);
-         $raw = array();
-         foreach(explode("\n", $block) as $line) {
-            $raw[] = trim($line," *\n\t");
-         }
-         return $raw;
-      }
+        protected function startParser($name, $payload = NULL) {
+            if (!preg_match('/^[a-zA-Z0-9]*$/', $name)) {
+                // TODO: errorlog
+                $this->current = new InvalidParser($name);
+            } else {
+                if (isset($this->map[$name])) {
+                    $this->current = new $this->map[$name]($name);
+                } else {
+                    $this->current = new GenericParser($name);
+                }
+            }
+            if ($payload !== NULL) {
+                $this->current->setPayload($payload);
+            }
+        }
 
-      protected function startParser($name, $payload = NULL) {
-         if (isset($this->map[$name])) {
-            $this->current = new $this->map[$name]($name);
-         } else {
-            $this->current = new GenericParser($name);
-         }
-         if ($payload !== NULL) {
-            $this->current->setPayload($payload);
-         }
-      }
-
-   }
+    }
 
 }

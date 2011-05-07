@@ -37,33 +37,58 @@
 
 namespace TheSeer\phpDox\DocBlock {
 
-   class ReturnParser extends GenericParser {
+    class GenericElement {
 
-      protected $name;
-      protected $payload;
+        protected $name;
+        protected $body;
+        protected $attributes = array();
 
-      public function __construct($name) {
-         $this->name = $name;
-      }
+        public function __construct($name) {
+            $this->name = $name;
+        }
 
-      public function setPayload($payload) {
-         $this->payload = $payload;
-      }
+        public function getAnnotationName() {
+            return $this->name;
+        }
 
-      public function getObject(array $buffer) {
-         $obj = new ReturnElement($this->name);
+        public function getBody() {
+            return $this->body;
+        }
 
-         $return = preg_split("/[\s,]+/", $this->payload, 2, PREG_SPLIT_NO_EMPTY);
-         if (count($return)==2) {
-            $obj->setDescription($return[1]);
-         }
-         $obj->setType($return[0]);
-         if (count($buffer)) {
-            $obj->setBody(join("\n", $buffer));
-         }
-         return $obj;
-      }
+        public function __call($method, $value) {
+            if (!preg_match('/^[s|g]et/', $method)) {
+                throw new GenericElementException("Method '$method' not defined", GenericElementException::MethodNotDefined);
+            }
+            if ($method[0]=='s') {
+                $attribute = strtolower(substr($method,3));
+                $this->attributes[$attribute] = $value[0];
+            } else {
+                if (!isset($this->attributes[$value[0]])) {
+                    throw new GenericElementException("Property '{$value[0]}' not defined", GenericElementException::PropertyNotDefined);
+                }
+                return $this->attributes[$value[0]];
+            }
+        }
 
-   }
+        public function setBody($body) {
+            $this->body = $body;
+        }
 
+        public function asDom(\TheSeer\fDOM\fDOMDocument $ctx) {
+            $node = $ctx->createElementNS('http://xml.phpdox.de/src#', $this->name);
+            foreach($this->attributes as $attribute => $value) {
+                $node->setAttribute($attribute, $value);
+            }
+            if ($this->body !== NULL && $this->body !== '') {
+                $node->appendChild($ctx->createTextnode($this->body));
+            }
+            return $node;
+        }
+
+    }
+
+    class GenericElementException extends \Exception {
+        const MethodNotDefined = 1;
+        const PropertyNotDefined = 2;
+    }
 }

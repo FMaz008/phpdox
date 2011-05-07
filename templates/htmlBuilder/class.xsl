@@ -2,19 +2,20 @@
 <xsl:stylesheet version="1.0"
    xmlns:xsl="http://www.w3.org/1999/XSL/Transform" 
    xmlns="http://www.w3.org/1999/xhtml"
-   xmlns:file="http://phpdox.de/xml#"
+   xmlns:file="http://xml.phpdox.de/src#"
    exclude-result-prefixes="#default file"
    >
    <xsl:output method="xml" indent="yes" encoding="utf-8" />
 
+   <xsl:param name="class" />
+
    <xsl:template match="/">
       <html>
          <head>
-            <link type="text/css" href="../style/media.css" rel="stylesheet" />
+            <link type="text/css" href="media.css" rel="stylesheet" />
          </head>
          <body>
-            <xsl:apply-templates select="file:file/file:namespace" />
-            <xsl:apply-templates select="file:file/file:namespace/file:class" />
+            <xsl:apply-templates select="//file:class[@full=$class]" />
          </body>
       </html>
    </xsl:template>

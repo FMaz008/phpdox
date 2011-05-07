@@ -33,37 +33,10 @@
  * @author     Arne Blankerts <arne@blankerts.de>
  * @copyright  Arne Blankerts <arne@blankerts.de>, All rights reserved.
  * @license    BSD License
+ *
  */
+namespace TheSeer\phpDox {
 
-namespace TheSeer\phpDox\DocBlock {
-
-   class ReturnElement extends GenericElement {
-
-      protected $description;
-      protected $type;
-
-      public function setType($type) {
-         $this->type = $type;
-      }
-
-      public function setDescription($desc) {
-         $this->description = $desc;
-      }
-
-      public function asDom(\TheSeer\fDOM\fDOMDocument $ctx) {
-         $node = $ctx->createElementNS('http://phpdox.de/xml#', $this->name);
-         $node->setAttribute('type', $this->type);
-
-         if ($this->description != '') {
-            $node->setAttribute('description', $this->description);
-         }
-         if ($this->body != '') {
-            $node->appendChild($ctx->createTextnode($this->body));
-         }
-         return $node;
-      }
-
-   }
-
-   class VarElement extends ReturnElement {}
+    interface EventHandler {
+    }
 }
