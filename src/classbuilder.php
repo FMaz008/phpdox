@@ -45,15 +45,14 @@ namespace TheSeer\phpDox {
 
         protected $ctx;
         protected $publicOnly;
-        protected $package = 'global';
+        protected $encoding;
+        protected $parser;
 
-        public function __construct(fDOMElement $ctx, $publicOnly = false) {
+        public function __construct(Parser $parser, fDOMElement $ctx, $publicOnly = false, $encoding = 'ISO-8859-1') {
+            $this->parser = $parser;
             $this->ctx = $ctx;
             $this->publicOnly = $publicOnly;
-        }
-
-        public function getPackage() {
-            return $this->package;
+            $this->encoding = $encoding;
         }
 
         public function process(\ReflectionClass $class) {
@@ -117,18 +116,14 @@ namespace TheSeer\phpDox {
 
         protected function processDocBlock(fDOMDocument $doc, $comment) {
             try {
-                $parser = new Parser();
-                $docblock = $parser->parse($comment);
-                /*
-                if ($docblock->hasElementByName('package')) {
-                    var_dump($docblock->getEementByName('package'));
-                    $this->package = $docblock->getEementByName('package')->getValue();
+                if ($this->encoding != 'UTF-8') {
+                    $comment = iconv($this->encoding, 'UTF-8//TRANSLIT', $comment);
                 }
-                */
+                $docblock = $this->parser->parse($comment);
                 return $docblock->asDom($doc);
             } catch (\Exception $e) {
                 // TODO: Error logger -> addWarning
-                var_dump($comment,$e);
+                var_dump($comment, $e);
                 //throw $e;
                 die();
             }
@@ -211,14 +206,6 @@ namespace TheSeer\phpDox {
                 if ($param->isDefaultValueAvailable()) {
                     $this->processValue($paramNode, $param->getDefaultValue());
                 }
-                /*
-                 if ($docBlock !== null) {
-                 $dpNode = $docBlock->query('//dox:parameter[@name="' . $param->getName() . '"]')->item(0);
-                 if ($dpNode) {
-                 $paramNode->appendChild($dpNode);
-                 }
-                 }
-                 */
             }
         }
 

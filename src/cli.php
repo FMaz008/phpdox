@@ -43,9 +43,7 @@
 
 namespace TheSeer\phpDox {
 
-    use \TheSeer\Tools\PHPFilterIterator;
-    use \TheSeer\fDOM\fDOMDocument;
-    use \TheSeer\fDOM\fDOMException;
+    use TheSeer\fDOM\fDOMException;
 
     class CLI {
 
@@ -56,11 +54,17 @@ namespace TheSeer\phpDox {
          */
         const VERSION = "%version%";
 
+
         /**
-         * Instance of Logger class in use
-         * @var ProgressLogger
+         * Factory instance
+         *
+         * @var Factory
          */
-        protected $logger;
+        protected $factory;
+
+        public function __construct(Factory $factory) {
+            $this->factory = $factory;
+        }
 
         /**
          * Main executor for CLI process.
@@ -84,17 +88,17 @@ namespace TheSeer\phpDox {
                 }
 
                 if ($input->getOption('silent')->value === true) {
-                    $this->logger = new ProgressLogger();
+                    $logger = $this->factory->getLogger('silent');
                 } else {
                     $this->showVersion();
-                    $this->logger = new ShellProgressLogger();
+                    $logger = $this->factory->getLogger('shell');
                 }
 
-                $app = new Application($this->logger, $input->getOption('xml')->value);
+                $this->factory->setXMLDir($input->getOption('xml')->value);
 
-                if ($require = $input->getOption('require')->value) {
-                    $this->processRequire($require, $app);
-                }
+                $app = $this->factory->getApplication();
+                $app->setLogger($logger);
+                $app->loadBootstrap($input->getOption('require')->value);
 
                 if ($path = $input->getOption('collect')->value) {
                     $path = realpath($path);
@@ -113,16 +117,17 @@ namespace TheSeer\phpDox {
                     );
                 }
 
-                $this->logger->buildSummary();
+                $logger->buildSummary();
 
+            } catch (fDOMException $e) {
+                fwrite(STDERR, "XML Error while processing request:\n");
+                fwrite(STDERR, $e->getFullMessage()."\n" . $e->getTraceAsString());
+                fwrite(STDERR, "\n\nPlease file a bugreport for this!\n");
+                exit(1);
             } catch (\ezcConsoleException $e) {
                 $this->showVersion();
                 fwrite(STDERR, $e->getMessage()."\n\n");
                 $this->showUsage();
-                exit(3);
-            } catch (fDOMException $e) {
-                fwrite(STDERR, "Error while processing request:\n");
-                fwrite(STDERR, $e->getFullMessage()."\n" . $e->getTraceAsString());
                 exit(3);
             } catch (CLIException $e) {
                 $this->showVersion();
@@ -131,25 +136,10 @@ namespace TheSeer\phpDox {
                 exit(3);
             } catch (\Exception $e) {
                 $this->showVersion();
-                fwrite(STDERR, "Error while processing request:\n");
+                fwrite(STDERR, "Unexpected error while processing request:\n");
                 fwrite(STDERR, ' - ' . $e."\n");
+                fwrite(STDERR, "\n\nPlease file a bugreport for this!\n");
                 exit(1);
-            }
-        }
-
-        /**
-         * Helper to load requested require files
-         *
-         * @param Array         $require      Array of files to require
-         * @param Application   $application  Instance of Application
-         */
-        protected function processRequire(Array $require, Application $application) {
-            foreach($require as $file) {
-                if (!file_exists($file) || !is_file($file)) {
-                    throw new CLIException("Require file '$file' not found or not a file", CLIException::RequireFailed);
-                }
-                $this->logger->log("Loading additional bootstrap file '$file'");
-                require $file;
             }
         }
 
@@ -162,28 +152,12 @@ namespace TheSeer\phpDox {
          * @return Theseer\Tools\IncludeExcludeFilterIterator
          */
         protected function getScanner($path, \ezcConsoleInput $input) {
-            $scanner = new \TheSeer\Tools\DirectoryScanner;
-
-            $include = $input->getOption('include');
-            if (is_array($include->value)) {
-                $scanner->setIncludes($include->value);
-            } else {
-                $scanner->addInclude($include->value);
-            }
-
-            $exclude = $input->getOption('exclude');
-            if ($exclude->value) {
-                if (is_array($exclude->value)) {
-                    $scanner->setExcludes($exclude->value);
-                } else {
-                    $scanner->addExclude($exclude->value);
-                }
-            }
-
-            $args = $input->getArguments();
+            $scanner = $this->factory->getScanner(
+                $input->getOption('include')->value,
+                $input->getOption('exclude')->value
+            );
             return $scanner($path);
         }
-
 
         /**
          * Helper to output version information.
@@ -250,7 +224,7 @@ namespace TheSeer\phpDox {
                 'Configuration file to load'
             ));
             $input->registerOption( new \ezcConsoleOption(
-                'r', 'require', \ezcConsoleInput::TYPE_STRING, null, true,
+                'r', 'require', \ezcConsoleInput::TYPE_STRING, array(), true,
                 'Custom PHP Source file to load'
             ));
             $input->registerOption( new \ezcConsoleOption(

@@ -54,6 +54,12 @@ namespace TheSeer\phpDox {
         protected $xmlDir;
 
         /**
+         * Factory instance
+         * @var Factory
+         */
+        protected $factory;
+
+        /**
          * Flag to enable or disable processing of non public methods and members
          * @var boolean
          */
@@ -64,12 +70,6 @@ namespace TheSeer\phpDox {
          * @var \TheSeer\fDOM\fDOMDocument
          */
         protected $namespaces;
-
-        /**
-         * fDOMDocument used to register Packages in
-         * @var \TheSeer\fDOM\fDOMDocument
-         */
-        protected $packages;
 
         /**
          * fDOMDocument used to register Interfaces in
@@ -86,17 +86,16 @@ namespace TheSeer\phpDox {
         /**
          * Collector constructor
          *
-         * @param \TheSeer\fDOM\fDomDocument $nsDom	 DOM instance to register namespaces in
-         * @param \TheSeer\fDOM\fDomDocument $pDom   DOM instance to register packages in
-         * @param \TheSeer\fDOM\fDomDocument $iDom	 DOM instance to register interfaces in
-         * @param \TheSeer\fDOM\fDomDocument $cDom	 DOM instance to register classes in
+         * @param Factory   $factory   Factory instance
+         * @param Container $container Container instance, holding coleection DOMs
+         * @param string    $xmlDir    Directory where (generated) xml files are stored in
          */
-        public function __construct($xmlDir, fDOMDocument $nsDom, fDOMDocument $pDom, fDOMDocument $iDom, fDOMDocument $cDom) {
+        public function __construct(Factory $factory, Container $container, $xmlDir) {
+            $this->factory    = $factory;
+            $this->namespaces = $container->getDocument('namespaces');
+            $this->interfaces = $container->getDocument('interfaces');
+            $this->classes    = $container->getDocument('classes');
             $this->xmlDir     = $xmlDir;
-            $this->namespaces = $nsDom;
-            $this->packages   = $pDom;
-            $this->interfaces = $iDom;
-            $this->classes    = $cDom;
         }
 
         /**
@@ -125,7 +124,7 @@ namespace TheSeer\phpDox {
          */
         public function run(\Theseer\Tools\IncludeExcludeFilterIterator $scanner, $logger) {
             $worker = new PHPFilterIterator($scanner);
-            $analyser = new Analyser($this->publicOnly);
+            $analyser = $this->factory->getAnalyser($this->publicOnly);
 
             if (!file_exists($this->xmlDir)) {
                 mkdir($this->xmlDir);
@@ -140,13 +139,14 @@ namespace TheSeer\phpDox {
                 try {
                     $xml = $analyser->processFile($file);
                     $xml->formatOutput= true;
+                    echo $xml->saveXML();
+
                     $xml->save($target);
                     touch($target, $file->getMTime(), $file->getATime());
 
                     $src = realpath($file->getPathName());
 
                     $this->registerNamespaces($target, $src, $analyser->getNamespaces());
-                    $this->registerInContainer($this->packages, 'package', $target, $src, $analyser->getPackages());
                     $this->registerInContainer($this->interfaces, 'interface', $target, $src, $analyser->getInterfaces());
                     $this->registerInContainer($this->classes, 'class', $target, $src, $analyser->getClasses());
                     $logger->progress('processed');

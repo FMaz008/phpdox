@@ -47,11 +47,12 @@ namespace TheSeer\phpDox {
         protected $namespaces;
         protected $interfaces;
         protected $classes;
-        protected $packages;
+        protected $factory;
 
         protected $dom;
 
-        public function __construct($publicOnly = false) {
+        public function __construct(Factory $factory, $publicOnly = false) {
+            $this->factory = $factory;
             $this->publicOnly = $publicOnly;
         }
 
@@ -67,15 +68,13 @@ namespace TheSeer\phpDox {
             return $this->namespaces;
         }
 
-        public function getPackages() {
-            return $this->packages;
-        }
-
         public function processFile(\SPLFileInfo $file) {
             $this->namespaces = array();
             $this->interfaces = array();
             $this->classes    = array();
-            $this->packages   = array();
+
+            $info = new \finfo();
+            $encoding = $info->file($file, FILEINFO_MIME_ENCODING);
 
             $this->initWorkDocument($file);
 
@@ -83,7 +82,7 @@ namespace TheSeer\phpDox {
             $session->addClassFactory( new \pdepend\reflection\factories\NullReflectionClassFactory() );
             $query = $session->createFileQuery();
             foreach ( $query->find( $file->getPathname() ) as $class ) {
-                $this->handleClass($class);
+                $this->handleClass($class, $encoding);
             }
 
             return $this->dom;
@@ -105,17 +104,14 @@ namespace TheSeer\phpDox {
             $head->setAttribute('sha1', sha1_file($file->getPathname()));
         }
 
-        protected function handleClass(\ReflectionClass  $class) {
+        protected function handleClass(\ReflectionClass $class, $encoding) {
             $context = $this->dom->documentElement;
             if ($class->inNamespace()) {
                 $context = $this->handleNamespace($class);
             }
 
-            $classBuilder = new ClassBuilder($context, $this->publicOnly);
+            $classBuilder = $this->factory->getClassBuilder($context, $this->publicOnly, $encoding);
             $classNode = $classBuilder->process($class);
-            if ($package = $classBuilder->getPackage()) {
-                $this->packages[$package] = $classNode;
-            }
             if ($class->isInterface()) {
                 $this->interfaces[$class->getName()] = $classNode;
             } else {

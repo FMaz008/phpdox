@@ -51,7 +51,6 @@ namespace TheSeer\phpDox {
         protected $logger;
 
         protected $namespaces;
-        protected $packages;
         protected $interfaces;
         protected $classes;
 
@@ -63,6 +62,9 @@ namespace TheSeer\phpDox {
         protected $eventHandler = array(
             'phpdox.start' => array(),
             'phpdox.end' => array(),
+
+            'phpdox.namespaces.start' => array(),
+            'phpdox.namespaces.end' => array(),
 
             'phpdox.classes.start' => array(),
             'phpdox.classes.end' => array(),
@@ -91,22 +93,19 @@ namespace TheSeer\phpDox {
         /**
          * Generator constructor
          *
-         * @param string       $xmlDir Base path where class xml files are found
-         * @param string       $tplDir Base path for templates
-         * @param string       $docDir Base directory to store documentation files in
-         * @param fDomDocument $nsDom  DOM instance of namespaces.xml
-         * @param fDomDocument $iDom   DOM instance of interfaces.xml
-         * @param fDomDocument $cDom   DOM instance of classes.xml
+         * @param string    $xmlDir Base path where class xml files are found
+         * @param string    $tplDir Base path for templates
+         * @param string    $docDir Base directory to store documentation files in
+         * @param Container $container   Collection of Container Documents
          */
-        public function __construct($xmlDir, $tplDir, $docDir, fDOMDocument $nsDom, fDOMDocument $pDom, fDOMDocument $iDom, fDOMDocument $cDom) {
+        public function __construct($xmlDir, $tplDir, $docDir, Container $container) {
             $this->xmlDir = $xmlDir;
             $this->docDir = $docDir;
             $this->tplDir = $tplDir;
 
-            $this->namespaces = $nsDom;
-            $this->packages   = $pDom;
-            $this->interfaces = $iDom;
-            $this->classes    = $cDom;
+            $this->namespaces = $container->getDocument('namespaces');
+            $this->interfaces = $container->getDocument('interfaces');
+            $this->classes    = $container->getDocument('classes');
         }
 
         public function setPublicOnly($switch) {
@@ -131,7 +130,7 @@ namespace TheSeer\phpDox {
          */
         public function run(ProgressLogger $logger) {
             $this->logger = $logger;
-            $this->triggerEvent('phpdox.start');
+            $this->triggerEvent('phpdox.start', $this->namespaces, $this->classes, $this->interfaces);
             if ($this->namespaces->documentElement->hasChildNodes()) {
                 $this->processWithNamespace();
             } else {
@@ -142,39 +141,42 @@ namespace TheSeer\phpDox {
         }
 
         protected function processGlobalOnly() {
-            $this->triggerEvent('phpdox.classes.start');
+            $this->triggerEvent('phpdox.classes.start', $this->classes);
             foreach($this->classes->query('//phpdox:class') as $class) {
                 $this->processClass($class);
             }
-            $this->triggerEvent('phpdox.classes.end');
-            $this->triggerEvent('phpdox.interfaces.start');
+            $this->triggerEvent('phpdox.classes.end', $this->classes);
+            $this->triggerEvent('phpdox.interfaces.start', $this->interfaces);
             foreach($this->interfaces->query('//phpdox:interface') as $interface) {
                 $this->processInterface($interface);
             }
-            $this->triggerEvent('phpdox.interfaces.end');
+            $this->triggerEvent('phpdox.interfaces.end', $this->interfaces);
         }
 
         protected function processWithNamespace() {
+            $this->triggerEvent('phpdox.namespaces.start', $this->namespaces);
+
             foreach($this->namespaces->query('//phpdox:namespace') as $namespace) {
                 $this->triggerEvent('namespace.start', $namespace);
-                $this->triggerEvent('namespace.classes.start', $namespace);
+                $this->triggerEvent('namespace.classes.start', $this->classes, $namespace);
 
                 $xpath = sprintf('//phpdox:namespace[@name="%s"]/phpdox:class', $namespace->getAttribute('name'));
                 foreach($this->classes->query($xpath) as $class) {
                     $this->processClass($class);
                 }
 
-                $this->triggerEvent('namespace.classes.end', $namespace);
-                $this->triggerEvent('namespace.interfaces.start', $namespace);
+                $this->triggerEvent('namespace.classes.end', $this->classes, $namespace);
+                $this->triggerEvent('namespace.interfaces.start', $this->interfaces, $namespace);
 
                 $xpath = sprintf('//phpdox:namespace[@name="%s"]/phpdox:interface', $namespace->getAttribute('name'));
                 foreach($this->interfaces->query($xpath) as $interface) {
                     $this->processInterface($interface);
                 }
 
-                $this->triggerEvent('namespace.interfaces.end', $namespace);
+                $this->triggerEvent('namespace.interfaces.end',$this->interfaces, $namespace);
                 $this->triggerEvent('namespace.end', $namespace);
             }
+            $this->triggerEvent('phpdox.namespaces.end', $this->namespaces);
         }
 
         public function getXSLTProcessor($filename) {
@@ -191,6 +193,23 @@ namespace TheSeer\phpDox {
                 mkdir($path, 0755, true);
             }
             return $dom->save($filename);
+        }
+
+        public function copyStatic($mask, $recursive = true) {
+            $path = $this->tplDir . '/' . $mask;
+            $len  = strlen($path);
+            if ($recursive) {
+                $worker = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($path));
+            } else {
+                $worker = new \DirectoryIterator($path);
+            }
+            foreach($worker as $x) {
+                $target = $this->docDir . substr($x->getPathname(), $len);
+                if (!file_exists(dirname($target))) {
+                    mkdir(dirname($target), 0755, true);
+                }
+                copy($x->getPathname(), $target);
+            }
         }
 
 

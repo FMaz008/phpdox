@@ -34,55 +34,10 @@
  * @copyright  Arne Blankerts <arne@blankerts.de>, All rights reserved.
  * @license    BSD License
  */
-
 namespace TheSeer\phpDox {
 
-    use \TheSeer\fDom\fDomDocument;
-    use \TheSeer\fDom\fDomElement;
-
-    class HtmlBuilder implements EventHandler {
-
-        protected $xsl;
-        protected $generator;
-
-        protected $eventMap = array(
-            'class.start' => 'buildClass'
-        );
-
-        public function setUp(Generator $generator) {
-            $this->generator = $generator;
-            foreach(array_keys($this->eventMap) as $event) {
-                $generator->registerHandler($event, $this);
-            }
-            $this->xsl = $generator->getXSLTProcessor('htmlBuilder/class.xsl');
-        }
-
-        public function handle($event) {
-            if (!isset($this->eventMap[$event])) {
-                throw new HtmlBuilderException("Don't know how to handle event '$event'", HtmlBuilderException::UnkownEvent);
-            }
-            $payload = func_get_args();
-            array_shift($payload);
-            call_user_func_array(array($this, $this->eventMap[$event]), $payload);
-
-        }
-
-        protected function buildClass(fDOMElement $classNode) {
-            $full = $classNode->getAttribute('full');
-            $this->xsl->setParameter('', 'class', $full);
-            //var_dump($full);
-            $html = $this->xsl->transformToDoc($classNode);
-            $this->generator->saveDomDocument($html, 'classes/'. $this->classNameToFileName($full, 'xhtml'));
-        }
-
-        protected function classNameToFileName($class, $ext = 'xml') {
-            return str_replace('\\', '_', $class) . '.' . $ext;
-        }
-
-    }
-
-    class HtmlBuilderException extends \Exception {
-        const UnkownEvent = 1;
-    }
+    $application->registerBuilderClass(
+        'html', '\\TheSeer\\phpDox\HtmlBuilder'
+    );
 
 }

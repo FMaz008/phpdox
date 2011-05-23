@@ -33,45 +33,66 @@
  * @author     Arne Blankerts <arne@blankerts.de>
  * @copyright  Arne Blankerts <arne@blankerts.de>, All rights reserved.
  * @license    BSD License
+ *
  */
-
 namespace TheSeer\phpDox {
 
     use \TheSeer\fDom\fDomDocument;
-    use \TheSeer\fXSL\fXSLTProcessor;
-    use \TheSeer\fXSL\fXSLCallback;
 
-    abstract class GenericBuilder {
-
-        private $xsltproc = array();
+    class Container {
 
         /**
-         * Helper to get XSLTProcessor instance
+         * Base path xml files are stored in
          *
-         * This method also registers the public methods of
-         * the backend to be callable from within the xsl context
-         *
-         * @param \DomDocument $xsl A Stylesheet DOMDocument
-         *
-         * @return TheSeer\fXSL\fXSLTProcessor
+         * @var string
          */
-        protected function getXSLTProcessor(\DomDocument $xsl) {
-            $hash = spl_object_hash($xsl);
-            if (isset($this->xsltproc[$hash])) {
-                return $this->xsltproc[$hash];
-            }
+        protected $xmlDir;
 
-            $cb = new fXSLCallback('http://phpdox.de/callback', 'cb');
-            $cb->setObject($this);
-            $cb->setBlacklist(array('run','build'));
+        /**
+         * Array of fDOMDocuments
+         *
+         * @var array
+         */
+        protected $documents = array();
 
-            $this->xsltproc[$hash] = new fXSLTProcessor($xsl);
-            $this->xsltproc[$hash]->registerCallback($cb);
 
-            return $this->xsltproc[$hash];
+        public function __construct($xmlDir) {
+            $this->xmlDir = $xmlDir;
         }
 
+        /**
+         * Helper to save all known and (updated) container files.
+         */
+        public function save() {
+            foreach($this->documents as $fname => $dom) {
+                $dom->save($fname);
+            }
+        }
+
+        /**
+         * Helper to load or create Container DOM Documents for namespaces, classes, interfaces, ...
+         *
+         * @param string $name name of the file (identical to root node)
+         *
+         * @return \TheSeer\fDom\fDomDocument
+         */
+        public function getDocument($name) {
+            $fname = $this->xmlDir . '/' . $name .'.xml';
+            if (isset($this->documents[$fname])) {
+                return $this->documents[$fname];
+            }
+            $dom = new fDOMDocument('1.0', 'UTF-8');
+            if (file_exists($fname)) {
+                $dom->load($fname);
+            } else {
+                $rootNode = $dom->createElementNS('http://xml.phpdox.de/src#', $name);
+                $dom->appendChild($rootNode);
+            }
+            $dom->registerNamespace('phpdox', 'http://xml.phpdox.de/src#');
+            $dom->formatOutput = true;
+            $this->documents[$fname] = $dom;
+            return $dom;
+        }
 
     }
-
 }
